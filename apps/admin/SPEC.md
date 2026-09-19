@@ -4,7 +4,23 @@ Next.js 15 (App Router) + TypeScript + Tailwind. Painel interno de curadoria: ca
 
 Base de referência: `/Users/alissonsilva/projects/duopace/admin`.
 
+Contratos, enums, tokens de cor e `formatCents`: **`packages/shared/SPEC.md`**. Preços no formulário e na API são `priceCents` / `originalPriceCents` — a máscara `R$` é só UI.
+
 **Não é público.** Não tem cadastro, não tem "esqueci minha senha" em tela, não é indexável (`robots.txt` bloqueando tudo + header `X-Robots-Tag: noindex`).
+
+---
+
+## Agente Admin
+
+**Dono:** só `apps/admin/**`.
+
+**Não toca:** `apps/api/**`, `apps/mobile/**`, `packages/shared/**` (só importa), `docker-compose.yml`, Prisma.
+
+**Dependência:** `@fitcupons/shared` compilando. Se o pacote ainda não existir, criar o shell do Next e as telas contra os tipos da SPEC do shared **sem inventar campo**; trocar o import para `@fitcupons/shared` assim que o Agente API publicar o pacote. Se um tipo faltar, parar e reportar.
+
+**Não fala com o banco.** Todo dado passa por `API_URL` (default `http://localhost:3000`). Sem API no ar, as telas ainda compilam com dados mock **tipados** nos contratos.
+
+**Fora deste agente:** ingestão/conectores, Fastlane, seed, schema.
 
 ---
 
@@ -95,7 +111,7 @@ Tabela server-side com paginação por cursor.
 
 **Filtros** (na URL, para o link ser compartilhável): busca por texto, status, fonte, loja, esporte, "expirando em 7 dias".
 
-**Ações em massa:** publicar, arquivar, marcar como destaque.
+**Ações em massa:** publicar, arquivar, marcar como destaque. O cliente itera os endpoints existentes (`POST .../publish`, `POST .../archive`, `PATCH { featured }`) — não há bulk no MVP.
 
 Linha de oferta expirada aparece esmaecida.
 
@@ -121,9 +137,9 @@ Layout de duas colunas. Coluna principal:
 | `startsAt` / `expiresAt` | datetime | `expiresAt > startsAt` |
 | `featured` | switch | |
 
-**Comportamento do desconto:** preenchendo `originalPrice` e `price`, o percentual é calculado e mostrado ao vivo ("−34%"). Se `price > originalPrice`, alerta inline — é o erro de digitação mais comum e o que mais irrita usuário no app.
+**Comportamento do desconto:** preenchendo `originalPriceCents` e `priceCents`, o percentual é `discountPercent()` de `@fitcupons/shared` e aparece ao vivo ("−34%"). Se `priceCents > originalPriceCents`, alerta inline — é o erro de digitação mais comum e o que mais irrita o usuário no app. Não reimplementar a conta.
 
-**Prévia ao vivo:** a coluna lateral renderiza o **card do feed exatamente como sai no mobile** — cabeçalho da loja, foto de capa, badge de desconto, título em 2 linhas, linha de preço com economia, etiqueta de cupom. Mesmos tokens de `@fitcupons/shared`. É o que evita publicar oferta com título cortado, foto errada ou desconto que não fecha.
+**Prévia ao vivo:** a coluna lateral renderiza o **card do feed exatamente como sai no mobile**, a partir de um `OfferListItem` montado no cliente com `formatCents` / `discountPercent` / `savingsCents` do shared. Cabeçalho da loja, foto de capa (`urlCard`), badge de desconto, título em 2 linhas, linha de preço com economia, etiqueta de cupom. É o que evita publicar oferta com título cortado, foto errada ou desconto que não fecha.
 
 **Imagens:** dropzone com múltiplos arquivos, upload direto para `POST /admin/offers/:id/images`, reordenação por arrastar (a primeira é a capa), remover individual. Numa oferta nova, as imagens só sobem depois do primeiro save — mostrar isso explicitamente em vez de falhar em silêncio.
 
@@ -191,7 +207,23 @@ Badges de status: `draft` cinza · `pending_review` âmbar · `published` verde 
 
 - Tudo em **pt-BR**, moeda `R$`, datas `dd/MM/yyyy HH:mm`. Sem camada de i18n.
 - Toda ação destrutiva pede confirmação nomeando o alvo ("Arquivar «Tênis Nike Pegasus 41»?").
-- Todo formulário mostra erro de campo vindo da API, não só um toast genérico.
+- Todo formulário mostra erro de campo vindo da API (`ApiError.message`), não só um toast genérico. Ramificar em `code` quando existir.
 - Estados vazios com ação ("Nenhuma oferta ainda — criar a primeira").
 - `loading.tsx` e `error.tsx` em cada rota do grupo `(dashboard)`.
 - Em desenvolvimento, `seed-demo` popula ofertas, favoritos e cliques (`apps/api/SPEC.md` §8.2). Nenhuma tela do admin deve ser avaliada com o banco vazio — nem o dashboard, nem a fila de moderação.
+- Oferta com `expiresAt` no passado aparece **esmaecida** na lista mesmo se o cron ainda não tiver mudado `status` para `expired`.
+
+### Endpoints por tela
+
+| tela | API |
+|---|---|
+| `/login` | `POST /admin/auth/login` |
+| `/offers` | `GET /admin/offers` |
+| `/offers/new` `[id]` | `POST/PATCH /admin/offers`, `POST .../publish`, `.../duplicate`, `.../archive`, imagens |
+| `/moderation` | `GET /admin/moderation`, `POST .../publish` (aprova), `POST .../reject` |
+| `/import` | `GET /admin/ml/search`, `POST /admin/ml/resolve`, `POST /admin/ml/import`, `GET/PATCH /admin/ml/categories` |
+| `/stores` `/sports` `/categories` | CRUD `/admin/stores` `/sports` `/categories` |
+| `/users` | `GET/PATCH /admin/users` |
+| `/ingestion` | `GET /admin/ingestion-runs`, `POST /admin/ingestion/run` |
+| `/stats` | `GET /admin/stats?from=&to=` |
+| `/settings` | `POST /auth/password/change` (token admin) |

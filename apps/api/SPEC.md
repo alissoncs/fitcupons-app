@@ -4,6 +4,22 @@ NestJS 11 + Prisma 6 + PostgreSQL. Serve o mobile e o admin, roda os coletores d
 
 Base de referência: `/Users/alissonsilva/projects/duopace/api`. Onde esta spec diz "portar", significa copiar o arquivo de lá e adaptar o modelo — não reescrever.
 
+Contratos de JSON, enums, tema e catálogo: **`packages/shared/SPEC.md`**. Esta spec não redefine tipo de oferta — implementa o que está lá.
+
+---
+
+## Agente API
+
+**Donos:** raiz do monorepo (`package.json` workspaces, `yarn.lock`), `packages/shared`, `apps/api`. Docker-compose e `.env.example` já existem — não recriar, só consumir.
+
+**Não toca:** `apps/admin/**`, `apps/mobile/**`.
+
+**Primeiro commit, antes de qualquer feature:** `@fitcupons/shared` exatamente como `packages/shared/SPEC.md` (tipos, enums, catálogo, `format.ts`, `theme.ts`) compilando. Admin e mobile dependem disso para começar de verdade.
+
+**Depois, nesta ordem:** Prisma (schema = §4) + seed + seed-demo → auth (portar duopace) → sports/categories/stores → offers/redeem/favorites/storage → admin HTTP → ingestion (AliExpress → ML fallback por link → Amazon desligada).
+
+**Fora deste agente:** WhatsApp/Telegram (só o model `RawMessage`), Fastlane, telas, `docs/brand-prompt.md`.
+
 ---
 
 ## 1. Stack e dependências
@@ -32,17 +48,17 @@ Base de referência: `/Users/alissonsilva/projects/duopace/api`. Onde esta spec 
 
 ## 2. Convenções
 
-**IDs** — string com prefixo, padrão do duopace: `createId('usr')` → `usr_x7k2…`. Prefixos: `usr` `acc` `off` `img` `spt` `str` `cat` `rdm` `tok` `run` `msg`.
+**IDs** — string com prefixo, padrão do duopace: `createId('usr')` → `usr_x7k2…`. Prefixos: `usr` `acc` `off` `img` `spt` `str` `cat` `rdm` `tok` `run` `msg` `mlc`. `Favorite` e tabelas N:N usam PK composta, sem prefixo.
 
 **Dinheiro** — sempre **inteiro em centavos** (`priceCents: 19990`). Nunca `float`, nunca `Decimal` serializado. Elimina erro de arredondamento e ambiguidade no JSON. A formatação (`R$ 199,90`) é responsabilidade do cliente.
 
 **Datas** — `DateTime` no banco, ISO 8601 UTC no JSON.
 
-**Paginação** — cursor, nunca offset. Request: `?cursor=<id>&limit=10` (**limit default 10**, máx 50). Response:
+**Paginação** — cursor, nunca offset. Request: `?cursor=<opaco>&limit=10` (**limit default 10**, máx 50). Response padrão:
 ```json
-{ "items": [...], "nextCursor": "off_abc123" }
+{ "items": [...], "nextCursor": "eyJ…" }
 ```
-`nextCursor: null` significa fim da lista.
+`nextCursor: null` significa fim da lista. O feed (`GET /offers`) acrescenta `meta` — ver `OfferFeedResponse` em `@fitcupons/shared`.
 
 **Erros** — formato único, sempre:
 ```json
@@ -56,23 +72,41 @@ Base de referência: `/Users/alissonsilva/projects/duopace/api`. Onde esta spec 
 
 ## 3. Variáveis de ambiente
 
+A fonte operacional é `apps/api/.env.example` (já alinhada ao `docker-compose.yml`). Postgres do host: **porta 5436**. Dentro da rede Docker, o serviço `postgres` continua em 5432 — só o mapeamento host→container é 5436.
+
+`ConfigService.getOrThrow` **só** para o que é obrigatório no boot. Conector sem credencial **não** pode derrubar a API.
+
+**Obrigatórias** (falha no boot se faltar):
+
 ```ini
-# core
 NODE_ENV=development
 PORT=3000
 API_URL=http://localhost:3000
 ADMIN_URL=http://localhost:3001
 CORS_ORIGINS=http://localhost:3001
-
-# db  (o sslrootcert só entra na URL em produção — ver comentário no schema)
-DATABASE_URL=postgresql://fitcupons:fitcupons@localhost:5432/fitcupons
-DIRECT_URL=postgresql://fitcupons:fitcupons@localhost:5432/fitcupons
-DATABASE_CA_CERT=
-
-# auth
+DATABASE_URL=postgresql://fitcupons:fitcupons@localhost:5436/fitcupons
+DIRECT_URL=postgresql://fitcupons:fitcupons@localhost:5436/fitcupons
 APP_JWT_SECRET=
 JWT_EXPIRES_IN=30m
+ADMIN_JWT_EXPIRES_IN=2h
 REFRESH_TOKEN_TTL_DAYS=60
+SMTP_URL=smtp://localhost:1026
+MAIL_FROM="fitcupons <nao-responda@fitcupons.app>"
+S3_ENDPOINT=http://localhost:9100
+S3_REGION=us-east-1
+S3_BUCKET=fitcupons
+S3_ACCESS_KEY_ID=fitcupons
+S3_SECRET_ACCESS_KEY=fitcupons123
+S3_FORCE_PATH_STYLE=true
+S3_PUBLIC_BASE_URL=http://localhost:9100/fitcupons
+ADMIN_EMAIL=admin@fitcupons.app
+ADMIN_PASSWORD=
+```
+
+**Opcionais** (`get`, nunca `getOrThrow`). Vazio = feature desligada, API sobe:
+
+```ini
+DATABASE_CA_CERT=
 GOOGLE_CLIENT_ID_IOS=
 GOOGLE_CLIENT_ID_ANDROID=
 GOOGLE_CLIENT_ID_WEB=
@@ -80,24 +114,8 @@ APPLE_CLIENT_ID=
 APPLE_TEAM_ID=
 APPLE_KEY_ID=
 APPLE_PRIVATE_KEY=
-
-# admin seed
-ADMIN_EMAIL=admin@fitcupons.app
-ADMIN_PASSWORD=
-
-# e-mail
-SMTP_URL=
-MAIL_FROM="fitcupons <nao-responda@fitcupons.app>"
-
-# storage
-S3_REGION=
-S3_BUCKET=
-S3_ACCESS_KEY_ID=
-S3_SECRET_ACCESS_KEY=
-S3_PUBLIC_BASE_URL=
-
-# ingestão
 INGESTION_CRON=0 */6 * * *
+OFFER_EXPIRE_CRON=15 3 * * *
 ALIEXPRESS_APP_KEY=
 ALIEXPRESS_APP_SECRET=
 ALIEXPRESS_TRACKING_ID=
@@ -107,8 +125,6 @@ ML_REFRESH_TOKEN=
 ML_AFFILIATE_TAG=ALISSON3208
 ML_AFFILIATE_URL_TEMPLATE={permalink}?matt_word={tag}&matt_tool={tool}
 ML_AFFILIATE_TOOL=
-
-# seed
 SEED_DEMO=true
 SEED_IMAGE_STRATEGY=local
 AMAZON_ENABLED=false
@@ -116,8 +132,6 @@ AMAZON_CLIENT_ID=
 AMAZON_CLIENT_SECRET=
 AMAZON_PARTNER_TAG=
 ```
-
-`ConfigService.getOrThrow` para tudo que é obrigatório — falha no boot, não em runtime.
 
 ---
 
@@ -136,6 +150,7 @@ enum DiscountType  { percentage fixed_amount free_shipping none }
 enum RedeemAction  { view copy_code open_link }
 enum TokenPurpose  { email_verification password_reset }
 enum IngestionStatus { running success failed }
+enum MessageChannel  { telegram whatsapp }
 ```
 
 ### `User`
@@ -154,7 +169,7 @@ enum IngestionStatus { running success failed }
 | `deletedAt` | `DateTime?` | soft delete, LGPD |
 | `createdAt` / `updatedAt` | | |
 
-Relações: `accounts Account[]`, `sportPreferences UserSportPreference[]`, `redeems Redeem[]`, `refreshTokens RefreshToken[]`, `authTokens AuthToken[]`.
+Relações: `accounts Account[]`, `sportPreferences UserSportPreference[]`, `favorites Favorite[]`, `redeems Redeem[]`, `refreshTokens RefreshToken[]`, `authTokens AuthToken[]`.
 
 ### `Account` — identidades de login (portar do duopace)
 
@@ -273,8 +288,10 @@ Categoria é **o que a coisa é** (Tênis, Suplemento, Bicicleta); `Sport` é **
 
 ### `OfferImage`
 
-`id`, `offerId`, `url`, `width?`, `height?`, `alt?`, `sortOrder Int @default(0)`, `createdAt`. `@@index([offerId])`.
+`id` (`createId('img')`), `offerId`, `urlThumb`, `urlCard`, `urlFull`, `width?`, `height?`, `blurhash?`, `alt?`, `sortOrder Int @default(0)`, `createdAt`. `@@index([offerId])`.
 A primeira imagem (`sortOrder: 0`) é a capa do card.
+
+O `StorageService` grava as três variantes. URL externa de conector (sem passar pelo sharp) **copia a mesma URL nos três campos**. O JSON público segue `packages/shared/SPEC.md` (`OfferImage` / `OfferImageCard`) — o feed não manda `urlFull`.
 
 ### `OfferSport`
 
@@ -288,7 +305,7 @@ A primeira imagem (`sortOrder: 0`) é a capa do card.
 
 ### `MlCategoryMap` — o que importar do Mercado Livre
 
-`id`, `mlCategoryId` (`MLB…`) `@unique`, `mlCategoryName`, `categoryId?` (nossa `Category`), `sportId?` (nosso `Sport`), `enabled Boolean @default(false)`, `lastCrawledAt?`, timestamps.
+`id` (`createId('mlc')`), `mlCategoryId` (`MLB…`) `@unique`, `mlCategoryName`, `categoryId?` (nossa `Category`), `sportId?` (nosso `Sport`), `enabled Boolean @default(false)`, `lastCrawledAt?`, timestamps.
 
 Tabela, não constante no código: quais categorias do ML fazem sentido para fitness é uma decisão de curadoria que muda, e o admin precisa ajustar sem deploy. É também o que traduz a taxonomia deles para a nossa na importação.
 
@@ -313,7 +330,7 @@ Tabela, não constante no código: quais categorias do ML fazem sentido para fit
 
 ### `RawMessage` — criar agora, usar na fase 2
 
-`id`, `channel` (`telegram` | `whatsapp`), `externalId`, `chatName?`, `body`, `receivedAt`, `parsedAt?`, `offerId?`. `@@unique([channel, externalId])`.
+`id` (`createId('msg')`), `channel MessageChannel`, `externalId`, `chatName?`, `body`, `receivedAt`, `parsedAt?`, `offerId?`. `@@unique([channel, externalId])`.
 Desacopla coleta de parsing: o worker só escreve aqui e nunca toca em `Offer`.
 
 ---
@@ -366,6 +383,13 @@ Política de senha: mínimo 8, máximo 128, não pode ser igual ao e-mail. Valid
 
 Tokens de e-mail: 32 bytes aleatórios, guardados só como hash, uso único (`usedAt`), TTL de 24h (verificação) e 1h (reset).
 
+Os e-mails apontam para páginas HTML mínimas servidas pela própria API (não existe web app do consumidor):
+
+- `{API_URL}/auth/email/verify-link?token=` — confirma e mostra "e-mail confirmado".
+- `{API_URL}/auth/password/reset-link?token=` — formulário de nova senha (é o que o Mailpit abre no desktop).
+
+O app registra o scheme `fitcupons://auth/verify` e `fitcupons://auth/reset` para o mesmo token, quando o link abrir no telefone. Aceite de termos no cadastro é **só no cliente** — não há `termsAcceptedAt` no User.
+
 ### 5.4 Sessão
 
 | Método | Rota | Nota |
@@ -393,7 +417,9 @@ Tokens de e-mail: 32 bytes aleatórios, guardados só como hash, uso único (`us
 
 ### 5.5 Login do admin
 
-`POST /admin/auth/login` — `{ email, password }`. Mesma verificação argon2, mas **rejeita `role != admin` com `403`** e emite um access token de TTL mais curto (`2h`), sem refresh token. O admin é web e renova por novo login; não vale a superfície de ataque de um refresh de 60 dias num painel administrativo.
+`POST /admin/auth/login` — `{ email, password }`. Mesma verificação argon2, mas **rejeita `role != admin` com `403 FORBIDDEN`** e emite um access token de TTL `ADMIN_JWT_EXPIRES_IN` (default 2h), sem refresh token. O admin é web e renova por novo login; não vale a superfície de ataque de um refresh de 60 dias num painel administrativo.
+
+`POST /auth/password/change` aceita o token do admin (mesmo JWT, `role=admin`) — é o que `/settings` do painel chama.
 
 Admin inicial vem do seed (`ADMIN_EMAIL` / `ADMIN_PASSWORD`). O seed é idempotente: cria se não existir, e nunca sobrescreve a senha de um admin já existente.
 
@@ -412,12 +438,12 @@ Legenda: 🔓 público · 🔑 autenticado · 🛡️ admin · 〰️ auth opcio
 | 🔓 | GET | `/stores` | Lojas ativas |
 | 〰️ | GET | `/offers` | **O feed.** Especificado por inteiro em **§6.1** |
 | 〰️ | GET | `/offers/new-count` | Alimenta a pílula "N novas promoções". Ver §6.1 |
-| 🔓 | GET | `/offers/:slug` | Detalhe com `images[]`, `sports[]`, `store` |
+| 🔓 | GET | `/offers/:slug` | Detalhe: `OfferDetail` em `@fitcupons/shared`. 404 `NOT_FOUND` se não publicada / expirada / deletada |
 | 〰️ | POST | `/offers/:id/redeem` | `{ action }` |
 | 🔑 | PUT | `/me/sports` | `{ sportIds: string[] }` |
-| 🔑 | GET | `/me/redeems` | Histórico do usuário, paginado |
-| 🔓 | GET | `/categories` | Árvore de categorias ativas |
-| 🔑 | GET | `/me/favorites` | Ofertas favoritadas, paginado, mais recente primeiro |
+| 🔑 | GET | `/me/redeems` | `Paginated<RedeemListItem>` |
+| 🔓 | GET | `/categories` | Árvore `Category[]` |
+| 🔑 | GET | `/me/favorites` | `FavoriteListResponse` (`total` para o badge) |
 | 🔑 | PUT | `/offers/:id/favorite` | Idempotente. `204` |
 | 🔑 | DELETE | `/offers/:id/favorite` | Idempotente. `204` |
 
@@ -429,7 +455,7 @@ Legenda: 🔓 público · 🔑 autenticado · 🛡️ admin · 〰️ auth opcio
 |---|---|---|
 | 🔓 | POST | `/admin/auth/login` |
 | 🛡️ | GET/POST/PATCH/DELETE | `/admin/offers` · `/admin/offers/:id` |
-| 🛡️ | POST | `/admin/offers/:id/publish` · `/reject` · `/duplicate` |
+| 🛡️ | POST | `/admin/offers/:id/publish` · `/reject` · `/duplicate` · `/archive` |
 | 🛡️ | POST | `/admin/offers/:id/images` (multipart, múltiplos) |
 | 🛡️ | DELETE | `/admin/offers/:id/images/:imageId` |
 | 🛡️ | PATCH | `/admin/offers/:id/images/order` |
@@ -444,7 +470,24 @@ Legenda: 🔓 público · 🔑 autenticado · 🛡️ admin · 〰️ auth opcio
 | 🛡️ | GET/PATCH | `/admin/ml/categories` (a `MlCategoryMap`) |
 | 🛡️ | GET/PATCH | `/admin/users` (listar, promover a admin, banir) |
 
-`GET /admin/stats` retorna: ofertas por status, top 20 ofertas por clique no período, cliques por loja, cliques por esporte, série diária de `Redeem` por `action`, e usuários novos por dia. Aceita `?from=&to=`.
+`GET /admin/stats` retorna: ofertas por status, top 20 ofertas por clique no período, cliques por loja, cliques por esporte, série diária de `Redeem` por `action`, taxa `view → open_link`, e usuários novos por dia. Aceita `?from=&to=`.
+
+Ações em massa no admin: o cliente itera `publish` / `archive` / `PATCH { featured }` por id. Sem endpoint bulk no MVP.
+
+### Transições de `Offer.status`
+
+| de | para | como |
+|---|---|---|
+| `draft` | `published` | `POST .../publish` — exige ≥1 imagem, `storeId`, ≥1 esporte, `destinationUrl`. Seta `publishedAt` se nulo |
+| `pending_review` | `published` | `POST .../publish` (aprovar). Carimba `verifiedAt` + `verifiedById` |
+| `pending_review` | `archived` | `POST .../reject` |
+| `published` | `archived` | `POST .../archive` |
+| `published` | `expired` | cron `OFFER_EXPIRE_CRON` quando `expiresAt < now()` |
+| qualquer (exceto archived) | `draft` | `POST .../duplicate` cria **outro** registro em `draft` |
+
+Cron de ingestão **cria `pending_review`**. Importação ML pelo admin **cria `draft`**.
+
+O feed público ignora `status` além de `published` e ainda filtra `expiresAt` — oferta vencida não aparece mesmo antes do cron rodar.
 
 ---
 
@@ -474,6 +517,8 @@ X-Device-Id: <uuid>                      (opcional, para anônimo)
 | `minDiscount` | int 0–100 | — | |
 | `minPriceCents` / `maxPriceCents` | int | — | |
 | `hasCoupon` | bool | — | `true` = só ofertas com `couponCode` |
+| `includeTotal` | bool | false | preenche `meta.totalHint` (o mobile usa na linha "23 promoções") |
+| `excludeOfferId` | id | — | omite essa oferta (carrossel de relacionadas) |
 
 ### Filtro base — sempre aplicado, não negociável
 
@@ -539,6 +584,7 @@ Regras: o `s` do cursor tem que bater com o `sort` da request — se o cliente t
       "featured": false,
       "verified": true,
       "isFavorite": true,
+      "viewCount": 128,
       "store": {
         "id": "str_ml", "slug": "mercado-livre",
         "name": "Mercado Livre", "logoUrl": "https://…"
@@ -566,7 +612,7 @@ Campos que o servidor calcula para o cliente não ter que recalcular (e divergir
 - **`hasCoupon`** = `couponCode != null`.
 - **`meta.appliedSportFilter`** = `preferences` \| `explicit` \| `none`. É o que permite ao estado vazio dizer a coisa certa: com `preferences`, "nada nos seus esportes — ver tudo?"; com `explicit`, "limpar filtros".
 
-**`images`** vem **só com a variante `card`** no feed, no máximo 5 por oferta, ordenadas por `sortOrder`. As demais variantes só no detalhe. Mandar `full` no feed multiplica o payload sem ninguém ver a diferença num card de 640px.
+Forma da resposta = `OfferFeedResponse` em `@fitcupons/shared`. **`images`** vem **só com a variante `card`** (`OfferImageCard`), no máximo 5 por oferta, ordenadas por `sortOrder`. As demais variantes só no detalhe. Mandar `full` no feed multiplica o payload sem ninguém ver a diferença num card de 640px.
 
 **`isFavorite`** — resolvido em **uma query só** por página: depois de buscar os itens, um `SELECT offerId FROM Favorite WHERE userId = ? AND offerId IN (…)` e um `Set` em memória. Nunca N+1, nunca uma request por card. Sem token, o campo vem `false` em todos.
 
@@ -612,7 +658,7 @@ Conta ofertas publicadas depois de `since`, sob **os mesmos filtros** que o feed
 
 ## 7. `src/offers`, `src/sports`, `src/storage`
 
-**`StorageService`** (`src/storage`) — portar o padrão do duopace. Recebe o buffer do upload, valida tipo (`image/jpeg|png|webp`) e tamanho (máx 8 MB), gera três variantes com `sharp` em webp — `thumb` 160px, `card` 640px, `full` 1280px, todas com `withoutEnlargement` — envia ao S3 sob `offers/{offerId}/{imageId}-{variant}.webp` e devolve as URLs. Interface própria (`StorageProvider`) para o provedor ser trocável por env.
+**`StorageService`** (`src/storage`) — portar o padrão do duopace. Recebe o buffer do upload, valida tipo (`image/jpeg|png|webp`) e tamanho (máx 8 MB), gera três variantes com `sharp` em webp — `thumb` 160px, `card` 640px, `full` 1280px, todas com `withoutEnlargement` — calcula `blurhash`, envia ao S3 sob `offers/{offerId}/{imageId}-{variant}.webp` e persiste `urlThumb` / `urlCard` / `urlFull` em `OfferImage`. Interface própria (`StorageProvider`) para o provedor ser trocável por env (`S3_ENDPOINT` + `S3_FORCE_PATH_STYLE` no MinIO local).
 
 ---
 
@@ -628,7 +674,7 @@ export interface OfferConnector {
 }
 ```
 
-`NormalizedOffer` vive em `@fitcupons/shared`.
+`NormalizedOffer` e `OfferConnector` vivem em `@fitcupons/shared` (`contracts/ingestion.ts`). Não redefinir aqui.
 
 `IngestionService` roda cada conector configurado, abre um `IngestionRun`, faz `upsert` por `[source, externalId]`, e grava o resultado. **Oferta vinda de conector entra como `pending_review`** — curadoria humana antes de publicar.
 
@@ -673,7 +719,7 @@ Dois arquivos, com papéis diferentes. `prisma/seed.ts` roda **em todo ambiente,
 
 ### `seed.ts` — dados de base
 
-Sports (as 14 da §4), Categories (as 10 da §4), o usuário admin de `ADMIN_EMAIL`/`ADMIN_PASSWORD`, e as lojas reais: Amazon, Mercado Livre, AliExpress, Netshoes, Centauro, Decathlon, Growth Supplements, Centauro, Track&Field. `upsert` por `slug` — nunca sobrescreve a senha de um admin existente.
+Sports (as 14 de `@fitcupons/shared`), Categories (as 10), o usuário admin de `ADMIN_EMAIL`/`ADMIN_PASSWORD`, e as lojas reais (upsert por `slug`): Amazon, Mercado Livre, AliExpress, Netshoes, Centauro, Decathlon, Growth Supplements, Track&Field. Nunca sobrescreve a senha de um admin existente.
 
 ### `seed-demo.ts` — anúncios falsos para desenvolver e demonstrar
 

@@ -1,0 +1,16 @@
+export const SPORTS = [
+  { slug: 'cycling', name: 'Ciclismo', iconName: 'bike' },
+  { slug: 'running', name: 'Corrida', iconName: 'run' },
+  { slug: 'swimming', name: 'Natação', iconName: 'swim' },
+  { slug: 'beach-tennis', name: 'Beach Tennis', iconName: 'tennis' },
+  { slug: 'volleyball', name: 'Vôlei', iconName: 'volleyball' },
+  { slug: 'triathlon', name: 'Triathlon', iconName: 'triathlon' },
+  { slug: 'gym', name: 'Musculação', iconName: 'dumbbell' },
+  { slug: 'crossfit', name: 'CrossFit', iconName: 'weight-lifter' },
+  { slug: 'football', name: 'Futebol', iconName: 'soccer' },
+  { slug: 'basketball', name: 'Basquete', iconName: 'basketball' },
+  { slug: 'surfing', name: 'Surf', iconName: 'surfing' },
+  { slug: 'trail', name: 'Trilha', iconName: 'hiking' },
+  { slug: 'yoga', name: 'Yoga', iconName: 'yoga' },
+  { slug: 'supplements', name: 'Suplementos', iconName: 'nutrition' },
+] as const;

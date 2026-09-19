@@ -1,0 +1,7 @@
+# Private git repo that stores encrypted certs and profiles.
+# Create an empty private repo, then set MATCH_GIT_URL in fastlane/.env.
+
+git_url(ENV.fetch("MATCH_GIT_URL", "git@github.com:YOUR_ORG/fitcupons-ios-signing.git"))
+storage_mode("git")
+type("appstore")
+app_identifier(["app.fitcupons"])

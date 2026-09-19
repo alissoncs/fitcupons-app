@@ -1,0 +1,128 @@
+# frozen_string_literal: true
+
+require "json"
+require "dotenv"
+
+opt_out_usage
+skip_docs
+
+default_platform(:ios)
+
+MOBILE_ROOT = File.expand_path("..", FastlaneCore::FastlaneFolder.path)
+BUNDLE_ID = "app.fitcupons"
+
+# Highest priority first (same order as Expo's @expo/env).
+EXPO_ENV_FILES = [
+  ".env.production.local",
+  ".env.local",
+  ".env.production",
+  ".env"
+].freeze
+
+def load_expo_env!
+  EXPO_ENV_FILES.each do |name|
+    path = File.join(MOBILE_ROOT, name)
+    Dotenv.load(path) if defined?(Dotenv) && File.exist?(path)
+  end
+  lane_env = File.join(MOBILE_ROOT, "fastlane", ".env")
+  Dotenv.load(lane_env) if defined?(Dotenv) && File.exist?(lane_env)
+end
+
+def app_json
+  JSON.parse(File.read(File.join(MOBILE_ROOT, "app.json")))
+end
+
+# Build number / versionCode = max(app.json, store max + 1), overridable by env.
+def next_build_number(current)
+  override = ENV["IOS_BUILD_NUMBER"] || ENV["ANDROID_VERSION_CODE"]
+  return override.to_i if override && !override.empty?
+
+  [current.to_i, 1].max
+end
+
+before_all do
+  load_expo_env!
+end
+
+platform :ios do
+  desc "Create/download signing certs and profiles via match"
+  lane :certificates do
+    UI.important("Set MATCH_GIT_URL, MATCH_PASSWORD and APPLE_TEAM_ID in fastlane/.env")
+    UI.message("Then: match(app_identifier: '#{BUNDLE_ID}', type: 'appstore')")
+  end
+
+  desc "expo prebuild + archive an App Store IPA (no upload)"
+  lane :build do
+    UI.important("Placeholder: cd #{MOBILE_ROOT} && npx expo prebuild --platform ios")
+    UI.important("Then gym export_method: app-store, bundle #{BUNDLE_ID}")
+    UI.message("Build number: max(app.json ios.buildNumber, TestFlight + 1). Override with IOS_BUILD_NUMBER.")
+  end
+
+  desc "The same as ios build + upload to TestFlight"
+  lane :beta do
+    UI.important("Placeholder: ios build + upload_to_testflight")
+    UI.message("Needs APP_STORE_CONNECT_KEY_ID / ISSUER_ID / KEY_PATH")
+  end
+
+  desc "Install a Release build on a USB iPhone (no App Store)"
+  lane :device do
+    UI.important("Placeholder: npx expo run:ios --device --configuration Release")
+  end
+end
+
+platform :android do
+  desc "expo prebuild + signed release AAB (no upload)"
+  lane :build do
+    UI.important("Placeholder: npx expo prebuild --platform android && ./gradlew bundleRelease")
+    UI.message("versionCode: max(app.json, Play max + 1). Override with ANDROID_VERSION_CODE.")
+  end
+
+  desc "AAB + upload to Internal Testing"
+  lane :internal do
+    UI.important("Placeholder: android build + upload_to_play_store(track: 'internal')")
+  end
+
+  desc "AAB + upload to the Beta track"
+  lane :beta do
+    UI.important("Placeholder: android build + upload_to_play_store(track: 'beta')")
+  end
+
+  desc "Signed APK for sideload"
+  lane :apk do
+    UI.important("Placeholder: ./gradlew assembleRelease")
+  end
+
+  desc "Upload an already-built AAB, no rebuild"
+  lane :upload do
+    UI.important("Placeholder: upload_to_play_store(aab: options[:aab] || ENV['AAB_PATH'])")
+  end
+
+  desc "Promote a versionCode between Play tracks, no rebuild"
+  lane :promote do
+    UI.important("Placeholder: supply promote from ENV['FROM_TRACK'] to ENV['TO_TRACK']")
+  end
+
+  desc "Show what is live on each Play track"
+  lane :tracks do
+    UI.important("Placeholder: print Play track status / rollout / notes")
+  end
+
+  desc "Change rollout / release notes of a published versionCode"
+  lane :release do
+    UI.important("Placeholder: edit Play release rollout")
+  end
+
+  desc "Halt a staged rollout"
+  lane :halt do
+    UI.important("Placeholder: halt Play rollout")
+  end
+
+  # android sha1 is not optional: without the upload-keystore SHA-1 in Google Cloud,
+  # Google Sign-In fails only on production builds, and the error does not say why.
+  desc "Print SHA-1 of the upload keystore — required for Google Sign-In"
+  lane :sha1 do
+    keystore = ENV.fetch("ANDROID_KEYSTORE_PATH", "secrets/fitcupons-release.keystore")
+    UI.message("keytool -list -v -keystore #{keystore}")
+    UI.important("Register that SHA-1 on the Android OAuth client in Google Cloud.")
+  end
+end

@@ -1,0 +1,9 @@
+{
+  "name": "@fitcupons/api",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "echo 'API ainda não está no ar'",
+    "lint": "echo 'API lint: aguardando implementação'"
+  }
+}

@@ -4,7 +4,23 @@ App Expo (React Native + TypeScript). É o produto: o usuário entra, diz quais 
 
 Base de referência: `/Users/alissonsilva/projects/duopace/mobile`.
 
+Contratos, enums, tokens, catálogo de esportes e `formatCents`: **`packages/shared/SPEC.md`**. O feed já traz `discountPercent`, `savingsCents`, `endingSoon`, `hasCoupon`, `verified`, `isFavorite` — **não recalcular**.
+
 > ⚠️ **Antes de escrever qualquer linha de código:** ler os docs **versionados** do Expo da SDK alvo (`https://docs.expo.dev/versions/vXX.0.0/`), conforme a regra que já existe em `duopace/AGENTS.md`. A API do Expo muda entre SDKs e escrever de memória gera código que não compila.
+
+---
+
+## Agente Mobile
+
+**Dono:** só `apps/mobile/**`.
+
+**Não toca:** `apps/api/**`, `apps/admin/**`, `packages/shared/**` (só importa), Prisma, docker-compose.
+
+**Dependência:** `@fitcupons/shared` compilando + Metro apontando para o workspace (doc versionada da SDK). Se o pacote ainda não existir, scaffold do Expo e telas contra os tipos da SPEC do shared, **sem inventar campo**.
+
+**Tokens** em `expo-secure-store`, nunca `AsyncStorage`. `API_URL` default `http://localhost:3000` (no device físico, IP da máquina).
+
+**Fora deste agente:** conectores, painel admin, seed, parser de mensagens. Fastlane **entra neste agente** (é do app).
 
 ---
 
@@ -45,7 +61,7 @@ app/
     ├── _layout.tsx             tab bar
     ├── index.tsx               Feed
     ├── search.tsx              Buscar
-    ├── saved.tsx               Meus resgates
+    ├── saved.tsx               Salvos (favoritos + histórico)
     └── profile.tsx             Perfil
 └── offer/[slug].tsx            detalhe (modal/push sobre as tabs)
 ```
@@ -97,7 +113,9 @@ Testar em **device físico**. O simulador não fecha o fluxo de forma confiável
 
 **`sign-in`** — `POST /auth/email/login`. Erro sempre genérico: **"E-mail ou senha incorretos."**
 
-**`forgot-password`** — pede o e-mail, chama `POST /auth/password/forgot`, e mostra sempre a mesma confirmação ("Se houver uma conta com esse e-mail, enviamos o link."), exista o e-mail ou não. O reset em si abre no navegador por deep link.
+**`forgot-password`** — pede o e-mail, chama `POST /auth/password/forgot`, e mostra sempre a mesma confirmação ("Se houver uma conta com esse e-mail, enviamos o link."), exista o e-mail ou não. O e-mail abre `{API_URL}/auth/password/reset-link?token=` (HTML da API, funciona no Mailpit). O app também registra `fitcupons://auth/reset` e `fitcupons://auth/verify`.
+
+Aceite de termos no `sign-up` é checkbox obrigatório **só no cliente**. Não há campo no User.
 
 **Banner de verificação** — enquanto `emailVerified: false`, uma faixa discreta no topo do Feed: "Confirme seu e-mail" + "Reenviar". Não bloqueia o uso do app.
 
@@ -134,27 +152,28 @@ Tela cheia, sem tab bar, logo após o primeiro login.
 
 #### Paginação
 
-- Primeira carga: **10 ofertas**. `GET /offers?limit=10`.
-- `onEndReached` (com `onEndReachedThreshold={0.5}`) busca a próxima página de 10 pelo `nextCursor` e **acrescenta no fim**. `useInfiniteQuery` com `fetchNextPage`.
+- Primeira carga: **10 ofertas**. `GET /offers?limit=10`. Sem `sports` na query: a API usa as preferências. Chip "Tudo" manda `sports=all`.
+- Filtro por esporte manda slugs em csv (`sports=cycling,running`), **não** `sports[]`. Combinar com `categoryId`.
+- `onEndReached` (com `onEndReachedThreshold={0.5}`) busca a próxima página de 10 pelo `nextCursor` e **acrescenta no fim**. `useInfiniteQuery` com `fetchNextPage`. Trocar filtro ou `sort` **descarta o cursor**.
 - Rodapé de carregamento: um esqueleto de card, nunca um spinner solto.
 - Fim da lista: "Você viu tudo por aqui" discreto, para a rolagem não parecer travada.
 - Pull-to-refresh no topo busca as mais novas e **substitui** a primeira página.
 
 #### Pílula "novas promoções"
 
-Ao voltar para a aba, se a API tiver algo mais novo que o topo atual, aparece uma pílula flutuante no alto — `primary`, com seta para cima: **"3 novas promoções"**. Toque rola ao topo e recarrega. É o gancho de retorno diário, e evita puxar o conteúdo debaixo do dedo de quem está lendo.
+Ao voltar para a aba, `GET /offers/new-count?since=<publishedAt do topo>` com **os mesmos filtros** da lista. Se `count > 0`, pílula flutuante no alto — `primary`, com seta para cima: **"3 novas promoções"**. Toque rola ao topo e recarrega. É o gancho de retorno diário, e evita puxar o conteúdo debaixo do dedo de quem está lendo.
 
 #### Cabeçalho fixo
 
 Fora da lista (não rola junto):
 
-1. Logo à esquerda; busca e sino à direita.
+1. Logo à esquerda; busca (navega para a tab Buscar) e sino à direita. O sino é **placeholder visual** (fase 2) — toque não faz nada além de um toast "em breve".
 2. **Duas faixas de chips horizontais:**
-   - **Esportes** — os do usuário + "Tudo".
-   - **Categorias** — `GET /categories`, com ícone dentro do chip.
+   - **Esportes** — os do usuário + "Tudo" (`sports=all`).
+   - **Categorias** — `GET /categories`, com ícone dentro do chip (`categoryId`).
 
    Os dois filtros **se combinam** (esporte E categoria). Chip ativo em `primary` com texto invertido. Trocar o filtro refaz a query sem desmontar a tela e leva o scroll de volta ao topo.
-3. Com filtro ativo, uma linha discreta: "Ciclismo · Bicicletas — 23 promoções" + "limpar".
+3. Com filtro ativo, uma linha discreta: "Ciclismo · Bicicletas" + contagem **só se** `includeTotal=true` vier `meta.totalHint` + "limpar". Sem `totalHint`, omitir o número.
 
 #### `OfferCard` — o post do feed
 
@@ -162,8 +181,8 @@ Card de largura cheia, separado do seguinte por um fio em `border`. De cima para
 
 1. **Cabeçalho da loja** — avatar circular de 32px com o logo, nome em `ink` 14px semibold, e abaixo em `inkMuted` 12px o tempo relativo ("há 2 h", "ontem", "12 de set"). À direita, o **coração** de favoritar.
 2. **Carrossel de fotos** — quadrado (1:1) ou 4:5, largura cheia, **paginação horizontal com snap**. `expo-image` com blurhash. Pontinhos na base quando há mais de uma foto; com mais de 6, contador `3/8`. Uma foto só: sem pontinhos, sem gesto.
-3. **Badge de desconto** sobreposta no canto superior direito da foto: `accent` sólido, texto branco, `−34%`. Se `expiresAt` estiver a menos de 48h, uma segunda tarja âmbar no canto oposto: "Acaba em 2 dias".
-4. **Linha de preço** — preço atual grande (20px, bold, `ink`), preço original riscado ao lado em `inkMuted`, e "Economize R$ 204" em `accent` 12px.
+3. **Badge de desconto** sobreposta no canto superior direito da foto: `accent` sólido, texto branco, `−{discountPercent}%` (campo do payload). Se `endingSoon`, uma segunda tarja âmbar no canto oposto: "Acaba em 2 dias".
+4. **Linha de preço** — `formatCents(priceCents)` grande (20px, bold, `ink`), original riscado ao lado em `inkMuted`, e "Economize {formatCents(savingsCents)}" em `accent` 12px quando `savingsCents` não é null.
 5. **Título** em 2 linhas com ellipsis.
 6. **Etiqueta de cupom**, quando existe: pílula tracejada em `primary` com o código.
 7. **Rodapé** — chips dos esportes à esquerda; à direita, botão de compartilhar.
@@ -179,7 +198,7 @@ Otimista: o coração enche na hora e `PUT /offers/:id/favorite` vai em segundo 
 #### Estados
 
 - **Carregando:** 3 esqueletos de card, não spinner em tela cheia.
-- **Vazio com filtro:** "Nenhuma promoção de Ciclismo em Bicicletas" + botão "limpar filtros".
+- **Vazio com filtro:** usar `meta.appliedSportFilter`. `explicit` → "Nenhuma promoção de Ciclismo em Bicicletas" + "limpar filtros". `preferences` → "Nada nos seus esportes — ver tudo?" (`sports=all`).
 - **Vazio sem filtro:** ilustração + "Em breve as primeiras promoções" + botão para ajustar esportes.
 - **Erro:** card do sistema com "Não consegui carregar" + "tentar de novo".
 
@@ -202,20 +221,19 @@ Altura de 320px, largura cheia, **paginação horizontal** com snap. `expo-image
 
 #### Bloco da loja
 
-Logo circular 40px, nome da loja em `ink`, e abaixo em `inkMuted` a origem ("via Mercado Livre"). À direita, o selo **✓ Verificado** em `accent` quando `verifiedAt` existe — é o que sustenta a curadoria diante da regra da Apple sobre apps que "não agregam valor".
+Logo circular 40px, nome da loja em `ink`, e abaixo em `inkMuted` a origem (`store.name` — não há campo "via" separado). À direita, o selo **✓ Verificado** em `accent` quando `verified` é true — é o que sustenta a curadoria diante da regra da Apple sobre apps que "não agregam valor".
 
 #### Bloco de preço — o herói da tela
 
 Em card `accentSoft`, com folga:
 
 ```
-De R̶$̶ ̶5̶9̶9̶,̶9̶0̶          [ −34% ]
-R$ 395,90
-Você economiza R$ 204,00
+De {formatCents(originalPriceCents)}          [ −{discountPercent}% ]
+{formatCents(priceCents)}
+Você economiza {formatCents(savingsCents)}
 ```
 
-Preço atual em 32px, peso bold, `ink`. Preço original riscado em 14px `inkMuted`. Economia em `accent`.
-Abaixo, quando existir: parcelamento e frete grátis como chips.
+Preço atual em 32px, peso bold, `ink`. Preço original riscado em 14px `inkMuted`. Economia em `accent`. Parcelamento e frete grátis **não entram no MVP** — não existem campos; não inventar chips.
 
 #### Cupom
 
@@ -223,7 +241,7 @@ Quando há `couponCode`, um card com borda **tracejada** em `primary`, o código
 
 #### Conteúdo
 
-Título completo (sem truncar), descrição, chips de esportes (com ícone) e a categoria. Depois, uma linha de meta: validade ("Válido até 30/09"), publicado há quanto tempo, e quantas pessoas abriram.
+Título completo (sem truncar), descrição, chips de esportes (com ícone) e a categoria. Depois, uma linha de meta: validade (`expiresAt`), publicado há quanto tempo (`publishedAt`), e `viewCount` ("N pessoas viram").
 
 #### Barra de ação fixa no rodapé
 
@@ -239,26 +257,26 @@ A URL aberta é `affiliateUrl` quando existe, `destinationUrl` caso contrário. 
 
 #### Relacionadas
 
-No fim, carrossel horizontal "Mais de Ciclismo" com ofertas do mesmo esporte ou loja.
+No fim, carrossel horizontal "Mais de {sport.name}" com `GET /offers?sports={slug}&limit=10&excludeOfferId={id}`. Sem endpoint extra.
 
 ---
 
 ### 5.3 Buscar (`(tabs)/search`)
 
-Campo com debounce de 300ms → `GET /offers?search=`. Aqui o layout é **grade de 2 colunas**, não o feed: buscar é atividade de comparação, e o card grande de foto única atrapalha a varredura.
+Campo com debounce de 300ms → `GET /offers?search=`. Layout **grade de 2 colunas**, não o feed: buscar é atividade de comparação.
 
-Filtros em bottom sheet: esporte, **categoria**, loja, faixa de preço, desconto mínimo, "só com cupom", ordenação. Chips de filtro ativo abaixo do campo, cada um removível. Buscas recentes guardadas localmente.
+Filtros em bottom sheet, todos query params já existentes: esporte (`sports`), categoria (`categoryId`), loja (`storeId`), `minPriceCents`/`maxPriceCents`, `minDiscount`, `hasCoupon=true`, `sort`. Chips de filtro ativo abaixo do campo, cada um removível. Buscas recentes guardadas localmente.
 
 ---
 
 ### 5.4 Salvos (`(tabs)/saved`)
 
-Duas abas no topo:
+Duas abas no topo. Label da tab: **Salvos** (não "Meus resgates" — resgate é evento, favorito é estado).
 
 - **Favoritos** — `GET /me/favorites`, grade de 2 colunas, mais recente primeiro. Deslizar para o lado remove. Vazio: "Toque no coração para salvar uma promoção."
 - **Histórico** — `GET /me/redeems`, agrupado por dia, mostrando a ação (viu / copiou o cupom / foi à loja). É o "onde estava aquela oferta de ontem".
 
-O badge da tab mostra a contagem de favoritos.
+O badge da tab usa `total` de `GET /me/favorites`, não a length da primeira página.
 
 
 ### 5.5 Perfil (`(tabs)/profile`)
@@ -267,7 +285,7 @@ Avatar, nome, e-mail, e os chips dos provedores vinculados (Google / Apple / Sen
 
 - **Meus esportes** → reabre o seletor do onboarding em modo edição.
 - **Definir senha** (quando `hasPassword: false`) ou **Alterar senha** — é como uma conta só-social ganha senha.
-- Notificações (placeholder, fase 2), Termos, Privacidade, Sobre.
+- Notificações (placeholder, fase 2 — a mesma no-op do sino), Termos, Privacidade, Sobre.
 - **Sair.**
 - **Excluir minha conta** — confirmação em dois passos com o texto explicando que é irreversível. Chama `DELETE /auth/me`.
 

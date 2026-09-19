@@ -1,0 +1,8 @@
+report.xml
+Preview.html
+screenshots
+test_output
+.env
+.env.*
+!.env.default
+!.env.example

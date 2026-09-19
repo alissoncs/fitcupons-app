@@ -1,0 +1,16 @@
+{
+  "name": "fitcupons",
+  "private": true,
+  "version": "0.0.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "lint": "yarn workspaces run lint"
+  },
+  "resolutions": {
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
+  }
+}

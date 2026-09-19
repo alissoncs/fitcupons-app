@@ -1,0 +1,16 @@
+# Identifiers match apps/mobile/app.json. Secrets come from fastlane/.env.
+
+app_identifier("app.fitcupons")
+apple_id(ENV["APPLE_ID"]) if ENV["APPLE_ID"]
+team_id(ENV["APPLE_TEAM_ID"]) if ENV["APPLE_TEAM_ID"]
+itc_team_id(ENV["ITC_TEAM_ID"]) if ENV["ITC_TEAM_ID"]
+
+for_platform :android do
+  package_name("app.fitcupons")
+  json_key_file(
+    ENV.fetch(
+      "GOOGLE_PLAY_JSON_KEY_PATH",
+      "secrets/google-play.json"
+    )
+  )
+end

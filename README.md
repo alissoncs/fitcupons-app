@@ -41,4 +41,11 @@ cp apps/api/.env.example apps/api/.env
 
 ## Status
 
-Planejamento. O código ainda não existe — só a estrutura e as specs.
+Admin e mobile estão no ar com **mocks** até a API responder `GET /health`. Depois disso, os clientes passam a usar a API automaticamente.
+
+```bash
+yarn install
+docker compose up -d
+yarn workspace @fitcupons/admin dev    # http://localhost:3001  (admin@fitcupons.app / fitcupons123)
+yarn workspace @fitcupons/mobile dev
+```

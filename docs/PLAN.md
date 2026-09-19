@@ -14,12 +14,14 @@ O sinal de negócio é a tabela `Redeem`: toda vez que o usuário **abre** ou **
 
 ### Especificações detalhadas
 
-Este documento é o plano. O detalhe de implementação de cada parte mora ao lado do código:
+Este documento é contexto, riscos e o recorte dos 3 agentes. **Se divergir de uma SPEC, a SPEC ganha.**
 
-- `apps/api/SPEC.md` — schema completo, fluxos de auth, todos os endpoints, conectores
-- `apps/admin/SPEC.md` — login por cookie, mapa de rotas, cada tela campo a campo
-- `apps/mobile/SPEC.md` — navegação, os três logins, onboarding, feed, resgate, requisitos de loja
-- `packages/shared/SPEC.md` — o que é compartilhado e por quê
+- `packages/shared/SPEC.md` — contrato congelado (JSON, enums, tema, catálogo)
+- `apps/api/SPEC.md` — schema, auth, endpoints, conectores, seeds
+- `apps/admin/SPEC.md` — login por cookie, mapa de rotas, cada tela
+- `apps/mobile/SPEC.md` — navegação, os três logins, onboarding, feed, resgate
+
+Não copiar schema nem shape de oferta daqui. O PLAN já atrasou uma vez (`price` vs `priceCents`) e isso quebraria os três agentes ao mesmo tempo.
 
 ### Decisões já tomadas (nas perguntas)
 
@@ -87,61 +89,19 @@ fitcupons/
 
 ---
 
-## 1. Schema Prisma (`apps/api/prisma/schema.prisma`)
+## 1. Schema Prisma
 
-Modelar a partir de `duopace/api/prisma/schema.prisma` — copiar o bloco `datasource` (o comentário sobre `sslrootcert`/`DIRECT_URL` é conhecimento operacional real) e o padrão de enums/índices.
+Fonte: `apps/api/SPEC.md` §4. Resumo só para orientar leitura:
 
-```prisma
-enum AuthProvider   { google apple email }
-enum UserRole       { user admin }
-enum OfferStatus    { draft pending_review published expired archived }
-enum OfferSource    { manual amazon mercado_livre aliexpress telegram whatsapp }
-enum DiscountType   { percentage fixed_amount free_shipping none }
-enum RedeemAction   { view copy_code open_link }
-```
+- **User / Account / RefreshToken / AuthToken** — uma pessoa, vários provedores; access JWT 30 min + refresh opaco 60 dias.
+- **Sport** (tabela) + **UserSportPreference** — onboarding. Catálogo em `@fitcupons/shared`.
+- **Category** (árvore) e **Store** — eixos independentes do esporte.
+- **Offer** — `priceCents` / `originalPriceCents` / `discountPercent` (calculado na escrita). `@@unique([source, externalId])`.
+- **OfferImage** — `urlThumb` / `urlCard` / `urlFull` + `blurhash`.
+- **Favorite** (estado) distinto de **Redeem** (log append-only).
+- **MlCategoryMap**, **IngestionRun**, **RawMessage** (fase 2).
 
-**`User`** — `email @unique`, `emailVerifiedAt`, `passwordHash?` (argon2id; null = conta só social), `name`, `avatarUrl`, `role`, `onboardedAt`, `lastLoginAt`, `deletedAt`.
-
-**`Account`** — identidades de login, portada do duopace: `userId`, `provider`, `providerAccountId`, `email?`, `refreshToken?` (só Apple, para o revoke). `@@unique([provider, providerAccountId])`. É o que permite a mesma pessoa entrar com Google hoje e com senha amanhã e cair na mesma conta.
-
-**`RefreshToken`** e **`AuthToken`** (verificação de e-mail / reset de senha) — ver `apps/api/SPEC.md` §5.
-
-**`Sport`** — `slug`, `name`, `iconName`, `sortOrder`, `active`. **Tabela, não enum**: o admin precisa adicionar modalidade sem deploy. Seed inicial em `prisma/seed.ts` (ícones do `@expo/vector-icons` / MaterialCommunityIcons):
-
-| slug | name | iconName |
-|---|---|---|
-| `cycling` | Ciclismo | `bike` |
-| `running` | Corrida | `run` |
-| `swimming` | Natação | `swim` |
-| `beach-tennis` | Beach Tennis | `tennis` |
-| `volleyball` | Vôlei | `volleyball` |
-| `triathlon` | Triathlon | `triathlon` |
-| `gym` | Musculação | `dumbbell` |
-| `crossfit` | CrossFit | `weight-lifter` |
-| `football` | Futebol | `soccer` |
-| `basketball` | Basquete | `basketball` |
-| `surfing` | Surf | `surfing` |
-| `trail` | Trilha | `hiking` |
-| `yoga` | Yoga | `yoga` |
-| `supplements` | Suplementos | `nutrition` |
-
-**`UserSportPreference`** — `@@id([userId, sportId])`. É o que o onboarding grava.
-
-**`Store`** — `slug`, `name`, `logoUrl`, `websiteUrl`, `affiliateTag`, `active`.
-
-**`Offer`** — `title`, `slug`, `description`, `storeId`, `price`, `originalPrice`, `currency` (`@default("BRL")`), `discountType`, `discountValue`, `couponCode`, `destinationUrl`, `affiliateUrl`, `source`, `externalId`, `status`, `featured`, `verifiedAt`, `verifiedById`, `startsAt`, `expiresAt`, `viewCount`, `clickCount`, `publishedAt`, timestamps + `deletedAt`.
-- `@@unique([source, externalId])` — chave de idempotência dos conectores (upsert sem duplicar).
-- `@@index([status, publishedAt])`, `@@index([status, featured, publishedAt])`.
-
-**`OfferImage`** — `offerId`, `url`, `width`, `height`, `alt`, `sortOrder`. Uma oferta tem **fotos** (plural), conforme pedido.
-
-**`OfferSport`** — `@@id([offerId, sportId])`. É o que casa a oferta com as preferências do usuário.
-
-**`Redeem`** — `userId?`, `offerId`, `action` (`view` | `copy_code` | `open_link`), `deviceId`, `ip`, `userAgent`, `createdAt`. Índices `[offerId, createdAt]` e `[userId, createdAt]`. `userId` é opcional para permitir contagem de anônimo depois.
-
-**`IngestionRun`** — `source`, `startedAt`, `finishedAt`, `itemsSeen`, `itemsCreated`, `itemsUpdated`, `status`, `error`. Observabilidade do cron.
-
-**`RawMessage`** (já criar, usar na fase 2) — `channel` (`telegram`|`whatsapp`), `externalId`, `chatName`, `body`, `parsedAt`, `offerId?`. Desacopla coleta de parsing.
+Enums, índices e seed: na SPEC da API. Dinheiro nunca é `price` / `originalPrice` / float.
 
 ---
 
@@ -170,7 +130,7 @@ Manter o `@Throttle({ default: { limit: 20, ttl: 60000 } })` nos endpoints de lo
 
 ### 2.3 `src/offers`
 
-- `GET /offers` — feed. Query: `sports[]`, `storeId`, `search`, `cursor`, `limit`, `sort` (`recent` | `discount` | `popular`). **Default sem `sports`: usar as preferências do usuário autenticado**; sem usuário, feed geral. Só `status = published` e `expiresAt` no futuro.
+- `GET /offers` — feed. Contrato em `packages/shared/SPEC.md` e detalhe em `apps/api/SPEC.md` §6.1. Default sem `sports`: preferências do usuário autenticado; `sports=all` força o geral.
 - `GET /offers/:slug` — detalhe com `images` e `sports`
 - `POST /offers/:id/redeem` (auth opcional) — body `{ action }`. Grava `Redeem` **e** incrementa o contador denormalizado (`viewCount` ou `clickCount`) na mesma transação. Throttle por usuário+oferta para não inflar com duplo toque.
 
@@ -238,7 +198,7 @@ Portar a estrutura de `duopace/mobile/src`. Telas:
 
 ### Identidade visual
 
-Roxo como marca/navegação; verde reservado para **economia** (badge de desconto, preço final, confirmações) — a separação é semântica, não decorativa. Tons dessaturados, conforme pedido. Tokens em `packages/shared/theme.ts`:
+Roxo como marca/navegação; verde reservado para **economia**. Tokens canônicos em `packages/shared/SPEC.md` (`theme.ts`) — a tabela abaixo é cópia, não fonte.
 
 | token | light | dark |
 |---|---|---|
@@ -290,16 +250,115 @@ Entregar ao usuário em `docs/brand-prompt.md`. Dois prompts, porque logo e íco
 
 ---
 
+## Execução com 3 agentes
+
+Três agentes em paralelo. Arquivos não se sobrepõem. O contrato está em `packages/shared/SPEC.md` — quem inventar campo fora dele quebra os outros dois.
+
+| Agente | Escreve | Lê, não escreve |
+|---|---|---|
+| **API** | raiz (`package.json` workspaces), `packages/shared/**`, `apps/api/**` | `docker-compose.yml` (já existe), SPECs do admin/mobile |
+| **Admin** | `apps/admin/**` | `@fitcupons/shared`, API HTTP, `apps/admin/SPEC.md` |
+| **Mobile** | `apps/mobile/**` | `@fitcupons/shared`, API HTTP, `apps/mobile/SPEC.md` |
+
+**Regra:** admin e mobile **não** editam `packages/shared` nem Prisma. Se o tipo faltar, param e reportam.
+
+**Handshake:** o Agente API cria `@fitcupons/shared` no primeiro commit. Admin e mobile podem ser lançados juntos; a primeira tarefa deles é o shell do app. Telas de lista só são avaliáveis com `prisma:seed:demo` — isso é do Agente API, cedo.
+
+Já existem e **ninguém recria:** `docker-compose.yml`, `apps/api/.env.example`, `AGENTS.md`.
+
+Infra local: `docker compose up -d` na raiz (postgres **5436**, MinIO **9100**, Mailpit **8026**).
+
+### Prompt — Agente API
+
+```
+Você é o Agente API do fitcupons.
+
+Ler nesta ordem, e seguir à letra:
+1. AGENTS.md
+2. docs/PLAN.md (contexto e riscos; se divergir da SPEC, a SPEC ganha)
+3. packages/shared/SPEC.md (contrato congelado — você IMPLEMENTA este pacote)
+4. apps/api/SPEC.md (o resto do seu trabalho)
+
+Escreve: package.json da raiz (yarn workspaces 1.22: apps/*, packages/*), packages/shared, apps/api.
+NÃO toca: apps/admin, apps/mobile, docker-compose.yml.
+
+Primeiro commit: packages/shared compilando, exportando exatamente os tipos/enums/tema/catálogo/format da SPEC. Sem isso os outros dois agentes não andam.
+
+Depois: Prisma (= SPEC §4, inclusive urlThumb/urlCard/urlFull + blurhash), seed + seed-demo (~40 ofertas, ~300 Redeem), auth portado de /Users/alissonsilva/projects/duopace/api/src/auth/ (não reescrever Apple revoke), sports/categories/stores, offers §6.1, redeem, favorites, storage (MinIO via S3_ENDPOINT), rotas /admin/*, ingestion (AliExpress completo, ML com fallback por página, Amazon desligada).
+
+Dinheiro é *Cents inteiro. getOrThrow só no env obrigatório. Conector sem credencial não derruba o boot.
+Sem testes automatizados. Verificação manual em docs/PLAN.md.
+Não commitar a menos que eu peça.
+```
+
+### Prompt — Agente Admin
+
+```
+Você é o Agente Admin do fitcupons.
+
+Ler nesta ordem:
+1. AGENTS.md
+2. docs/PLAN.md (só contexto; SPEC ganha)
+3. packages/shared/SPEC.md (contratos — só importa, NÃO edita)
+4. apps/admin/SPEC.md
+
+Escreve: somente apps/admin/**.
+NÃO toca: apps/api, apps/mobile, packages/shared, prisma, docker-compose.
+
+Stack: Next.js 15 App Router, Tailwind, Radix, react-hook-form + zod, cookie httpOnly `fc_admin`. Sem NextAuth. Sem localStorage para token. UI pt-BR.
+Toda chamada HTTP vai para API_URL (default http://localhost:3000). O admin não fala com o banco.
+
+Preços: priceCents / originalPriceCents. Desconto ao vivo via discountPercent() do shared.
+Prévia do card = OfferListItem com os tokens de theme.ts.
+Ações em massa iteram endpoints existentes (sem bulk).
+Import ML: aba "Por link" primeiro (POST /admin/ml/resolve). Busca mostra aviso se a API do ML estiver 403.
+
+Se @fitcupons/shared ainda não existir, crie o shell e tipagem local idêntica à SPEC do shared; migre o import quando o pacote aparecer. Não invente campos.
+Sem testes automatizados. Não commitar a menos que eu peça.
+```
+
+### Prompt — Agente Mobile
+
+```
+Você é o Agente Mobile do fitcupons.
+
+Ler nesta ordem:
+1. AGENTS.md
+2. docs/PLAN.md (só contexto; SPEC ganha)
+3. packages/shared/SPEC.md (contratos — só importa, NÃO edita)
+4. apps/mobile/SPEC.md
+
+ANTES de qualquer linha: ler os docs versionados do Expo da SDK alvo em https://docs.expo.dev/versions/vXX.0.0/ — inclusive metro.config.js para yarn workspaces (watchFolders + nodeModulesPaths).
+
+Escreve: somente apps/mobile/** (inclui Fastlane, espelhando /Users/alissonsilva/projects/duopace/mobile/fastlane).
+NÃO toca: apps/api, apps/admin, packages/shared, prisma, docker-compose.
+
+Feed: GET /offers §6.1. sports=csv ou sports=all. Campos discountPercent, savingsCents, endingSoon, verified, isFavorite, hasCoupon vêm prontos — não recalcular.
+Pílula de novas: GET /offers/new-count?since=.
+Favoritos ≠ histórico. Tab chama-se Salvos. Badge usa total de GET /me/favorites.
+URL aberta: affiliateUrl ?? destinationUrl.
+Tokens em expo-secure-store. Interceptor 401 com refresh único (fila).
+Sign in with Apple só no iOS. Excluir conta dentro do app.
+Sino de notificação é placeholder. Parcelamento/frete não existem.
+
+Se @fitcupons/shared ainda não existir, scaffold + tipos idênticos à SPEC; migre o import depois. Não invente campos.
+Sem testes automatizados. Não commitar a menos que eu peça.
+```
+
+---
+
 ## Ordem de execução
 
-1. Scaffold do monorepo, `docker-compose.yml`, `packages/shared` (tipos, catálogo de esportes, tokens de cor).
-2. `apps/api`: Prisma schema + migration + seed de `Sport` e `Store`.
+A ordem abaixo é a dependência real. Com 3 agentes, o Agente API percorre 1–4 e 7; o Admin o passo 5; o Mobile o passo 6. O passo 1 (shared) é o handshake.
+
+1. Scaffold do monorepo + `packages/shared` (tipos, catálogo, tokens) — **Agente API, primeiro commit**.
+2. `apps/api`: Prisma schema + migration + `seed.ts` + **`seed-demo.ts` antes de qualquer tela de lista**.
 3. `apps/api`: portar `src/auth` do duopace; `/sports`; `PUT /me/sports`.
-4. `apps/api`: `offers` (feed, detalhe, redeem) + `storage`.
-5. `apps/admin`: CRUD de Offer/Store/Sport + upload + dashboard.
-6. `apps/mobile`: login → onboarding de esportes → feed → detalhe → resgate → perfil.
-7. `apps/api/src/ingestion`: contrato + AliExpress completo, Mercado Livre, Amazon (desligado) + fila de moderação no admin.
-8. `docs/brand-prompt.md`.
+4. `apps/api`: offers §6.1, redeem, favorites, storage.
+5. `apps/admin`: CRUD + upload + moderação + dashboard + import por link.
+6. `apps/mobile`: login → onboarding → feed → detalhe → resgate → perfil + Fastlane (`android sha1` faz parte do login Google, não do deploy).
+7. `apps/api/src/ingestion`: AliExpress completo, Mercado Livre (fallback por link primeiro), Amazon desligada.
+8. `docs/brand-prompt.md` (fora dos 3 agentes de código).
 
 **Onde os seeds entram:** `prisma/seed.ts` (sports, categories, stores, admin) no passo 2, junto da migration. `prisma/seed-demo.ts` logo depois — **antes** do admin e do mobile, não depois. Construir tela de lista contra banco vazio é construir às cegas: a paginação do feed, o carrossel de fotos e o dashboard de métricas só podem ser avaliados com volume e datas espalhadas.
 
