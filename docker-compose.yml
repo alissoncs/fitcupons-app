@@ -1,0 +1,147 @@
+# Infra local do fitcupons.
+#
+#   docker compose up -d                  → postgres + minio + mailpit (o que o dev precisa)
+#   docker compose --profile tools up -d  → + pgadmin
+#
+# Os apps (api/admin) rodam fora do Docker no dia a dia, com `yarn dev`, para ter
+# hot reload decente. O profile `apps` existe para subir tudo em container quando
+# for preciso — mas depende dos Dockerfiles, que nascem junto com cada app.
+#
+# Portas deslocadas de propósito: já existem outros projetos nesta máquina
+# ocupando 5432 (obrai) e 5435 (duopace).
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: fitcupons-postgres
+    restart: unless-stopped
+    ports:
+      - "5436:5432"
+    environment:
+      POSTGRES_USER: fitcupons
+      POSTGRES_PASSWORD: fitcupons
+      POSTGRES_DB: fitcupons
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fitcupons -d fitcupons"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+  # S3 local. O StorageService fala S3 de verdade (@aws-sdk/client-s3), então o
+  # seed com SEED_IMAGE_STRATEGY=local exercita sharp → webp → upload de ponta a
+  # ponta aqui, e não só em produção.
+  minio:
+    image: minio/minio:latest
+    container_name: fitcupons-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    ports:
+      - "9100:9000"   # API S3
+      - "9101:9001"   # console web
+    environment:
+      MINIO_ROOT_USER: fitcupons
+      MINIO_ROOT_PASSWORD: fitcupons123
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+  # One-shot: cria o bucket e deixa ele legível publicamente, porque o mobile
+  # carrega as fotos das ofertas direto pela URL.
+  minio-init:
+    image: minio/mc:latest
+    container_name: fitcupons-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 fitcupons fitcupons123 &&
+      mc mb --ignore-existing local/fitcupons &&
+      mc anonymous set download local/fitcupons &&
+      echo 'bucket fitcupons pronto'
+      "
+    restart: "no"
+
+  # SMTP de mentira. Captura os e-mails de verificação de conta e reset de senha
+  # e mostra numa interface web — nada sai para a internet.
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: fitcupons-mailpit
+    restart: unless-stopped
+    ports:
+      - "1026:1025"   # SMTP
+      - "8026:8025"   # web
+    environment:
+      MP_MAX_MESSAGES: 500
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: fitcupons-pgadmin
+    profiles: ["tools"]
+    restart: unless-stopped
+    ports:
+      - "5051:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@fitcupons.local
+      PGADMIN_DEFAULT_PASSWORD: fitcupons
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # --- profile `apps` -------------------------------------------------------
+  # Só funcionam depois que os Dockerfiles existirem (eles nascem com cada app).
+  # Até lá, `docker compose up -d` sem profile ignora estes serviços.
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: fitcupons-api
+    profiles: ["apps"]
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - apps/api/.env
+    environment:
+      DATABASE_URL: postgresql://fitcupons:fitcupons@postgres:5432/fitcupons
+      DIRECT_URL: postgresql://fitcupons:fitcupons@postgres:5432/fitcupons
+      S3_ENDPOINT: http://minio:9000
+      SMTP_URL: smtp://mailpit:1025
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  admin:
+    build:
+      context: .
+      dockerfile: apps/admin/Dockerfile
+    container_name: fitcupons-admin
+    profiles: ["apps"]
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      API_URL: http://api:3000
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:
+  minio_data:
+  pgadmin_data:

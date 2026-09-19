@@ -1,0 +1,68 @@
+# deps
+node_modules/
+.yarn/cache
+.yarn/install-state.gz
+.pnp.*
+
+# build
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+
+# env — só o .example é versionado
+.env
+.env.*
+!.env.example
+!.env.default
+
+# segredos: chaves .p8, keystores, service accounts do Play
+secrets/
+*.p8
+*.keystore
+*.jks
+*.mobileprovision
+*.cer
+*.certSigningRequest
+google-service-account*.json
+google-services.json
+GoogleService-Info.plist
+
+# prisma
+apps/api/prisma/db-ca.crt
+
+# expo / react native
+.expo/
+.expo-shared/
+apps/mobile/ios/
+apps/mobile/android/
+*.ipa
+*.aab
+*.apk
+*.dSYM.zip
+
+# fastlane
+apps/mobile/fastlane/.env
+apps/mobile/fastlane/report.xml
+apps/mobile/fastlane/README.md
+apps/mobile/fastlane/Preview.html
+apps/mobile/fastlane/screenshots/**/*.png
+apps/mobile/fastlane/test_output/
+apps/mobile/vendor/bundle/
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# editor / os
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+
+# claude
+.claude/settings.local.json
