@@ -15,6 +15,8 @@ Monorepo yarn workspaces:
 
 Comece por **[`docs/PLAN.md`](docs/PLAN.md)** — contexto, decisões tomadas, riscos apurados e ordem de execução.
 
+Variáveis de ambiente e configs: **[`docs/ENV.md`](docs/ENV.md)**.
+
 Depois, a spec da parte em que for mexer:
 
 - [`apps/api/SPEC.md`](apps/api/SPEC.md) — schema, autenticação, todos os endpoints (o feed em §6.1), conectores de afiliado

@@ -1,6 +1,7 @@
 import { formatCents } from '@fitcupons/shared';
 import Link from 'next/link';
 import { listOffers } from '@/lib/data';
+import { OFFER_STATUS_LABEL } from '@/lib/labels';
 
 const STATUS: Record<string, string> = {
   draft: 'bg-zinc-100 text-zinc-700',
@@ -93,7 +94,7 @@ export default async function OffersPage() {
                     <span
                       className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS[offer.status] ?? ''}`}
                     >
-                      {offer.status}
+                      {OFFER_STATUS_LABEL[offer.status] ?? offer.status}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-ink-muted">{offer.clickCount}</td>

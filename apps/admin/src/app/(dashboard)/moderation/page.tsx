@@ -1,5 +1,6 @@
 import { formatCents } from '@fitcupons/shared';
 import { listModeration } from '@/lib/data';
+import { OFFER_SOURCE_LABEL } from '@/lib/labels';
 import Link from 'next/link';
 
 export default async function ModerationPage() {
@@ -22,7 +23,9 @@ export default async function ModerationPage() {
                 <img src={offer.images[0].url} alt="" className="h-40 w-full object-cover" />
               ) : null}
               <div className="p-4">
-                <p className="text-xs uppercase text-ink-muted">{offer.source}</p>
+                <p className="text-xs font-medium text-ink-muted">
+                  {OFFER_SOURCE_LABEL[offer.source] ?? offer.source}
+                </p>
                 <h2 className="mt-1 font-semibold text-ink">{offer.title}</h2>
                 <p className="mt-1 text-sm text-accent">
                   {offer.priceCents != null ? formatCents(offer.priceCents) : '—'}

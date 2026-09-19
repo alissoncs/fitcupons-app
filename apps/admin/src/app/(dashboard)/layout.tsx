@@ -1,4 +1,4 @@
-import Link from 'next/link';
+import { SideNav } from '@/components/side-nav';
 import { logoutAction } from '@/lib/auth';
 import { dataSourceLabel } from '@/lib/data';
 
@@ -29,17 +29,7 @@ export default async function DashboardLayout({
           <p className="text-sm font-semibold tracking-tight text-primary">fitcupons</p>
           <p className="text-xs text-ink-muted">curadoria</p>
         </div>
-        <nav className="flex flex-1 flex-col gap-0.5 p-3">
-          {NAV.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="rounded-[10px] px-3 py-2 text-sm text-ink hover:bg-primary-soft hover:text-primary"
-            >
-              {item.label}
-            </Link>
-          ))}
-        </nav>
+        <SideNav items={NAV} />
         <form action={logoutAction} className="border-t border-border p-3">
           <p className="mb-2 px-3 text-[10px] uppercase tracking-wide text-ink-muted">
             fonte: {source === 'api' ? 'API ao vivo' : 'mock'}

@@ -23,22 +23,26 @@ export async function loginAction(formData: FormData) {
   let token: string | null = null;
 
   if (live) {
-    const response = await fetch(`${API_URL}/admin/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ email, password }),
-    });
-    if (!response.ok) {
-      const err = await parseApiError(response);
-      return {
-        error:
-          err.status === 401 || err.code === 'INVALID_CREDENTIALS'
-            ? 'E-mail ou senha incorretos.'
-            : err.message,
-      };
+    try {
+      const response = await fetch(`${API_URL}/admin/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      if (!response.ok) {
+        const err = await parseApiError(response);
+        return {
+          error:
+            err.status === 401 || err.code === 'INVALID_CREDENTIALS'
+              ? 'E-mail ou senha incorretos.'
+              : err.message,
+        };
+      }
+      const data = (await response.json()) as { accessToken: string };
+      token = data.accessToken;
+    } catch {
+      return { error: 'Não foi possível falar com a API. Confira API_URL e se ela está no ar.' };
     }
-    const data = (await response.json()) as { accessToken: string };
-    token = data.accessToken;
   } else if (email === MOCK_EMAIL && password === MOCK_PASSWORD) {
     token = 'mock-admin-token';
   } else {
@@ -84,18 +88,23 @@ export async function adminFetch<T>(
     throw new AdminApiError('API offline — usando mock no servidor de dados', 503);
   }
 
-  const response = await fetch(`${API_URL}${path}`, {
-    ...init,
-    cache: 'no-store',
-    headers: {
-      Accept: 'application/json',
-      Authorization: `Bearer ${token}`,
-      ...(init?.body instanceof FormData
-        ? {}
-        : { 'Content-Type': 'application/json' }),
-      ...(init?.headers ?? {}),
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      ...init,
+      cache: 'no-store',
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${token}`,
+        ...(init?.body instanceof FormData
+          ? {}
+          : { 'Content-Type': 'application/json' }),
+        ...(init?.headers ?? {}),
+      },
+    });
+  } catch {
+    throw new AdminApiError('Não foi possível falar com a API.', 503);
+  }
 
   if (response.status === 401) {
     const jar = await cookies();

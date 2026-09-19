@@ -7,8 +7,9 @@ Monorepo yarn workspaces: `apps/api` (NestJS), `apps/admin` (Next.js), `apps/mob
 Ler, nesta ordem:
 
 1. `docs/PLAN.md` — contexto, decisões, riscos, e **§ Execução com 3 agentes** (quem escreve o quê).
-2. `packages/shared/SPEC.md` — contrato congelado. Nenhum app inventa campo fora daqui.
-3. A `SPEC.md` da pasta em que você vai mexer (`apps/api/SPEC.md`, `apps/admin/SPEC.md`, `apps/mobile/SPEC.md`).
+2. `docs/ENV.md` — todas as configs e variáveis de ambiente, o que já está no código e o que ainda falta preencher.
+3. `packages/shared/SPEC.md` — contrato congelado. Nenhum app inventa campo fora daqui.
+4. A `SPEC.md` da pasta em que você vai mexer (`apps/api/SPEC.md`, `apps/admin/SPEC.md`, `apps/mobile/SPEC.md`).
 
 Se PLAN e SPEC divergirem, a SPEC ganha.
 

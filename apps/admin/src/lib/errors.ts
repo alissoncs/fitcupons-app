@@ -1,3 +1,5 @@
+import { getAdminDataMode } from './config';
+
 export class AdminApiError extends Error {
   constructor(
     message: string,
@@ -9,16 +11,29 @@ export class AdminApiError extends Error {
   }
 }
 
+type ProbeCache = { ok: boolean; at: number };
+let probeCache: ProbeCache | null = null;
+const PROBE_TTL_MS = 8_000;
+
 export async function probeApi(baseUrl: string): Promise<boolean> {
+  const mode = getAdminDataMode();
+  if (mode === 'mock') return false;
+  if (mode === 'live') return true;
+
+  if (probeCache && Date.now() - probeCache.at < PROBE_TTL_MS) {
+    return probeCache.ok;
+  }
+
   try {
     const response = await fetch(`${baseUrl}/health`, {
       cache: 'no-store',
       signal: AbortSignal.timeout(1200),
     });
-    return response.ok;
+    probeCache = { ok: response.ok, at: Date.now() };
   } catch {
-    return false;
+    probeCache = { ok: false, at: Date.now() };
   }
+  return probeCache.ok;
 }
 
 type ErrorBody = { message?: string; code?: string };

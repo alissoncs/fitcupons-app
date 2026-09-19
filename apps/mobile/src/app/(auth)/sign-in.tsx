@@ -23,6 +23,9 @@ function isUserCancel(error: unknown): boolean {
 let googleConfigured = false;
 function ensureGoogle() {
   if (googleConfigured) return;
+  if (!GOOGLE_IOS_CLIENT_ID && !GOOGLE_WEB_CLIENT_ID) {
+    throw new Error('GOOGLE_NOT_CONFIGURED');
+  }
   googleConfigured = true;
   GoogleSignin.configure({
     iosClientId: GOOGLE_IOS_CLIENT_ID || undefined,
@@ -80,7 +83,12 @@ export default function SignInScreen() {
       await finish(await api.loginGoogle(idToken));
     } catch (error) {
       if (isUserCancel(error)) return;
-      setError('E-mail ou senha incorretos.');
+      const message = error instanceof Error ? error.message : '';
+      setError(
+        message === 'GOOGLE_NOT_CONFIGURED'
+          ? 'Google ainda não está configurado neste build.'
+          : 'Não foi possível entrar com o Google.',
+      );
     } finally {
       setLoading(false);
     }
@@ -104,7 +112,7 @@ export default function SignInScreen() {
       await finish(await api.loginApple(credential.identityToken, credential.authorizationCode ?? undefined));
     } catch (error) {
       if (isUserCancel(error)) return;
-      setError('E-mail ou senha incorretos.');
+      setError('Não foi possível entrar com a Apple.');
     } finally {
       setLoading(false);
     }

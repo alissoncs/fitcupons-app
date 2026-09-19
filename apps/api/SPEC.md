@@ -72,7 +72,7 @@ Contratos de JSON, enums, tema e catálogo: **`packages/shared/SPEC.md`**. Esta 
 
 ## 3. Variáveis de ambiente
 
-A fonte operacional é `apps/api/.env.example` (já alinhada ao `docker-compose.yml`). Postgres do host: **porta 5436**. Dentro da rede Docker, o serviço `postgres` continua em 5432 — só o mapeamento host→container é 5436.
+A fonte operacional é `apps/api/.env.example` (já alinhada ao `docker-compose.yml`). Inventário completo (admin, mobile, Fastlane, Docker e o que ainda falta preencher): `docs/ENV.md`. Postgres do host: **porta 5436**. Dentro da rede Docker, o serviço `postgres` continua em 5432 — só o mapeamento host→container é 5436.
 
 `ConfigService.getOrThrow` **só** para o que é obrigatório no boot. Conector sem credencial **não** pode derrubar a API.
 
@@ -107,6 +107,7 @@ ADMIN_PASSWORD=
 
 ```ini
 DATABASE_CA_CERT=
+APP_SCHEME=fitcupons
 GOOGLE_CLIENT_ID_IOS=
 GOOGLE_CLIENT_ID_ANDROID=
 GOOGLE_CLIENT_ID_WEB=
@@ -125,6 +126,8 @@ ML_REFRESH_TOKEN=
 ML_AFFILIATE_TAG=ALISSON3208
 ML_AFFILIATE_URL_TEMPLATE={permalink}?matt_word={tag}&matt_tool={tool}
 ML_AFFILIATE_TOOL=
+ML_MIN_DISCOUNT_PERCENT=15
+ML_MIN_SOLD_QUANTITY=1
 SEED_DEMO=true
 SEED_IMAGE_STRATEGY=local
 AMAZON_ENABLED=false

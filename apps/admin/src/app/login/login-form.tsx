@@ -59,9 +59,11 @@ export function LoginForm({ nextPath }: { nextPath: string }) {
       >
         {loading ? 'Entrando…' : 'Entrar'}
       </button>
-      <p className="text-xs text-ink-muted">
-        Sem API no ar, use admin@fitcupons.app / fitcupons123
-      </p>
+      {process.env.NODE_ENV !== 'production' ? (
+        <p className="text-xs text-ink-muted">
+          Sem API no ar, use admin@fitcupons.app / fitcupons123
+        </p>
+      ) : null}
     </form>
   );
 }

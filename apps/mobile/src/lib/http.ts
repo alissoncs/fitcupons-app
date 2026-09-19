@@ -1,4 +1,4 @@
-import { API_URL, DEFAULT_TIMEOUT_MS, HEALTH_TIMEOUT_MS } from './config';
+import { API_URL, DEFAULT_TIMEOUT_MS, HEALTH_TIMEOUT_MS, getClientDataMode } from './config';
 import { HttpError, TimeoutError } from './errors';
 import { handleMockRequest } from './mock-server';
 import { clearTokens, getAccessToken, getOrCreateDeviceId, getRefreshToken, setTokens } from './storage';
@@ -62,6 +62,16 @@ async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: numbe
 }
 
 export async function detectApiMode(): Promise<ApiMode> {
+  const forced = getClientDataMode();
+  if (forced === 'mock') {
+    mode = 'mock';
+    return mode;
+  }
+  if (forced === 'live') {
+    mode = 'live';
+    return mode;
+  }
+
   try {
     const response = await fetchWithTimeout(`${API_URL.replace(/\/$/, '')}/health`, { method: 'GET' }, HEALTH_TIMEOUT_MS);
     mode = response.ok ? 'live' : 'mock';

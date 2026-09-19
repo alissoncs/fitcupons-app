@@ -180,7 +180,7 @@ export function FilterSheet({ visible, onClose, value, onApply, sports, categori
 
 const styles = StyleSheet.create({
   overlay: { flex: 1, justifyContent: 'flex-end' },
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.4)' },
+  backdrop: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: 'rgba(0,0,0,0.4)' },
   sheet: {
     maxHeight: '88%',
     borderTopLeftRadius: 20,
